@@ -2,8 +2,11 @@ import datetime
 import random
 
 from nonebot import CommandGroup, get_plugin_config, logger, require
-from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, Message, MessageSegment
+from nonebot.rule import to_me
+from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, MessageEvent, Message, MessageSegment
 from nonebot.params import CommandArg
+from nonebot.typing import T_State
+from nonebot.plugin import PluginMetadata
 
 from .configs import Config, LocalConfig
 from .draw_img import draw_img
@@ -31,6 +34,27 @@ rankDataFoolishFile = store.get_data_file(
 rankData: RankData = RankData(rankDataFile)
 rankDataFoolish: RankData = RankData(rankDataFoolishFile)
 
+# 命令注册
+__plugin_meta__ = PluginMetadata(
+    name="jrrp",
+    description="今日人品",
+    usage=(
+        "  jrrp 查询今日人品\n"
+        "  jrrp.rank <style[2]> <color[#0066CC]> 查询人品排行\n"
+        "  jrrp.help 显示帮助列表\n"
+    ),
+    type="application",
+    homepage="https://www.github.com/shiyihang2007/nonebot-plugin-jrrp-next/",
+    config=Config,
+    supported_adapters={"~onebot.v11"},
+    extra={
+        "unique_name": "nonebot_plugin_jrrp_next_m",
+        "example": "",
+        "author": "shiyihang <467557146@qq.com>",
+        "version": "0.0.1",
+    },
+)
+
 
 async def is_enabled(event: GroupMessageEvent) -> bool:
     _, group_id, user_id = event.get_session_id().split("_")
@@ -43,11 +67,57 @@ async def is_enabled(event: GroupMessageEvent) -> bool:
     return False
 
 
-RP_COMMAND_GROUP = CommandGroup("jrrp", rule=is_enabled)
-JRRP_COMMAND = RP_COMMAND_GROUP.command(tuple(), aliases={"今日人品", "rp"})
-RANK_COMMAND = RP_COMMAND_GROUP.command("rank", aliases={"人品排行", "rk"})
-FOOL_MODE_COMMAND = RP_COMMAND_GROUP.command("fool", aliases={"愚人节模式"})
-FOOL_RP_COMMAND = RP_COMMAND_GROUP.command("foolrank", aliases={"指定人品"})
+async def is_admin(bot: Bot, event: MessageEvent, state: T_State) -> bool:
+    if not await to_me()(bot, event, state):
+        return False
+    user_id: str = event.get_user_id()
+    if isinstance(event, GroupMessageEvent):
+        group_id: str = str(event.group_id)
+        user_info: dict = await bot.call_api(
+            "get_group_member_info", **{"group_id": group_id, "user_id": user_id}
+        )
+        user_role: str = user_info["role"]
+        # 只允许管理员使用
+        if user_role in ["owner", "admin"]:
+            return True
+        return False
+    # 禁用私聊
+    return False
+
+RP_COMMAND_GROUP = CommandGroup("jrrp", priority=config["command_priority"])
+JRRP_COMMAND = RP_COMMAND_GROUP.command(
+    tuple(), aliases={"今日人品", "rp"}, rule=is_enabled)
+RANK_COMMAND = RP_COMMAND_GROUP.command(
+    "rank", aliases={"人品排行", "rk"}, rule=is_enabled)
+FOOL_MODE_COMMAND = RP_COMMAND_GROUP.command(
+    "fool", aliases={"愚人节模式"}, rule=is_enabled)
+FOOL_RP_COMMAND = RP_COMMAND_GROUP.command(
+    "foolrank", aliases={"指定人品"}, rule=is_enabled)
+
+ENABLE_COMMAND = RP_COMMAND_GROUP.command(
+    "enable", aliases={"启用"}, rule=is_admin)
+DISABLE_COMMAND = RP_COMMAND_GROUP.command(
+    "disable", aliases={"禁用"}, rule=is_admin)
+
+
+@ENABLE_COMMAND.handle()
+async def _(event: GroupMessageEvent):
+    global config
+    group_id = str(event.group_id)
+    if group_id in config["groups_enabled"]:
+        await ENABLE_COMMAND.finish(f"群聊 {group_id} 已在白名单中")
+    config["groups_enabled"].add(group_id)
+    await ENABLE_COMMAND.send(f"群聊 {group_id} 加入了白名单")
+
+
+@DISABLE_COMMAND.handle()
+async def _(event: GroupMessageEvent):
+    global config
+    group_id = str(event.group_id)
+    if group_id not in config["groups_enabled"]:
+        await DISABLE_COMMAND.finish(f"群聊 {group_id} 不在白名单中")
+    config["groups_enabled"].remove(group_id)
+    await DISABLE_COMMAND.send(f"群聊 {group_id} 退出了白名单")
 
 
 @JRRP_COMMAND.handle()
@@ -127,7 +197,7 @@ async def _(bot: Bot, event: GroupMessageEvent, arg: Message = CommandArg()):
 
     config["fool_mode"] = args[0] if len(args) > 0 else not config["fool_mode"]
     await FOOL_MODE_COMMAND.finish(
-        f"愚人节模式 {"已启用" if config["fool_mode"] else "已禁用"}"
+        f'愚人节模式 {"已启用" if config["fool_mode"] else "已禁用"}'
     )
 
 
