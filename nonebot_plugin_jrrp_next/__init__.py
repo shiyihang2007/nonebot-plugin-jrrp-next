@@ -84,7 +84,7 @@ async def is_admin(bot: Bot, event: MessageEvent, state: T_State) -> bool:
     # 禁用私聊
     return False
 
-RP_COMMAND_GROUP = CommandGroup("jrrp", priority=config["command_priority"])
+RP_COMMAND_GROUP = CommandGroup("jrrp", priority=config["command_priority"], prefix_aliases=True)
 JRRP_COMMAND = RP_COMMAND_GROUP.command(
     tuple(), aliases={"今日人品", "rp"}, rule=is_enabled)
 RANK_COMMAND = RP_COMMAND_GROUP.command(
